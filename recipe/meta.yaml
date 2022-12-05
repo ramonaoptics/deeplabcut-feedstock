@@ -11,10 +11,21 @@ source:
     - patches/0001-Do-not-install-download-script.patch
     - patches/0002-Silence-warnigns-about-tensorflow-lite.patch
     - patches/0003-Do-not-modify-tensorflow-warnings.patch
-
+    # Ramona Optics only patches
+    # Generate by going to the silence branch, and running the command
+    #
+    #     git format-patch v{{ version }}
+    - patches/0004-Ensure-videos-are-sorted-during-inference-steps-to-h.patch
+    - patches/0005-Try-to-silence-most-print-statements-through-the-inf.patch
+    - patches/0006-Ensure-that-the-default-tqdm-isn-t-used.patch
+    - patches/0007-Use-a-preallocated-array-for-batched-array-operation.patch
+    - patches/0008-Delay-disabling-eager-execution-on-tensorflow.patch
+    - patches/0009-Disable-eager-execusion-in-some-multi-animal-models.patch
+    - patches/0010-Make-numba-an-optional-dependency.patch
+    - patches/0011-Avoid-warning-about-not-having-pytorch-installed.patch
 
 build:
-  number: 0
+  number: 100
   noarch: python
   script: {{ PYTHON }} -m pip install . -vv --no-deps
   # Confirm with upstream before making this entry point
@@ -32,7 +43,6 @@ requirements:
     - filterpy >=1.4.4
     - ruamel.yaml >=0.15.0
     - imgaug >=0.4.0
-    - numba >=0.54
     - matplotlib-base >=3.3
     - networkx >=2.6
     - numpy >=1.18.5
@@ -49,6 +59,8 @@ requirements:
     - tqdm
     - pyyaml
     - pillow >=7.1
+  run_constrained:
+    - numba >=0.54
 
 test:
   requires:

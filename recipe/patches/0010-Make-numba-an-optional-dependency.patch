@@ -1,0 +1,72 @@
+From c4bd9d6b25d4b52a492fcecec93a3a5467947fc5 Mon Sep 17 00:00:00 2001
+From: Mark Harfouche <mark.harfouche@gmail.com>
+Date: Mon, 15 Aug 2022 07:29:21 -0400
+Subject: [PATCH 10/11] Make numba an optional dependency
+
+---
+ .../lib/trackingutils.py                       | 18 +++++++++++-------
+ setup.py                                       |  1 -
+ 2 files changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/deeplabcut/pose_estimation_tensorflow/lib/trackingutils.py b/deeplabcut/pose_estimation_tensorflow/lib/trackingutils.py
+index f1d695c..5cc3c45 100644
+--- a/deeplabcut/pose_estimation_tensorflow/lib/trackingutils.py
++++ b/deeplabcut/pose_estimation_tensorflow/lib/trackingutils.py
+@@ -15,15 +15,19 @@ from collections import defaultdict
+ from filterpy.common import kinematic_kf
+ from filterpy.kalman import KalmanFilter
+ from matplotlib import patches
+-from numba import jit
+-from numba.core.errors import NumbaPerformanceWarning
++try:
++    from numba import jit
++    from numba.core.errors import NumbaPerformanceWarning
++    warnings.simplefilter("ignore", category=NumbaPerformanceWarning)
++except ImportError:
++    def jit(*args, **kwargs):
++        def deco(fun):
++            return fun
++        return deco
+ from scipy.optimize import linear_sum_assignment
+ from scipy.stats import mode
+-from tqdm import tqdm
+ 
+ 
+-warnings.simplefilter("ignore", category=NumbaPerformanceWarning)
+-
+ TRACK_METHODS = {
+     "box": "_bx",
+     "skeleton": "_sk",
+@@ -787,7 +791,7 @@ def reconstruct_all_ellipses(data, sd):
+     fitter = EllipseFitter(sd)
+     for n, animal in enumerate(animals):
+         data = xy.xs(animal, axis=1, level="individuals").values.reshape((nrows, -1, 2))
+-        for i, coords in enumerate(tqdm(data)):
++        for i, coords in enumerate(data):
+             el = fitter.fit(coords.astype(np.float64))
+             if el is not None:
+                 ellipses[n, i] = el.parameters
+@@ -810,7 +814,7 @@ def _track_individuals(
+ 
+     tracklets = defaultdict(dict)
+     all_hyps = dict()
+-    for i, (multi, single) in enumerate(tqdm(individuals)):
++    for i, (multi, single) in enumerate(individuals):
+         if single is not None:
+             tracklets["single"][i] = single
+         if multi is None:
+diff --git a/setup.py b/setup.py
+index f8b32e9..48004f1 100644
+--- a/setup.py
++++ b/setup.py
+@@ -28,7 +28,6 @@ setuptools.setup(
+         "filterpy>=1.4.4",
+         "ruamel.yaml>=0.15.0",
+         "imgaug>=0.4.0",
+-        "numba>=0.54",
+         "matplotlib>=3.3",
+         "networkx>=2.6",
+         "numpy>=1.18.5",
+-- 
+2.34.1
+

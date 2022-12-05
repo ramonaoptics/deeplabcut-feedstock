@@ -1,0 +1,864 @@
+From d8e2887424d14b30605c6d41306a02c4f787acd7 Mon Sep 17 00:00:00 2001
+From: Mark Harfouche <mark.harfouche@gmail.com>
+Date: Tue, 22 Mar 2022 15:19:23 -0400
+Subject: [PATCH 05/11] Try to silence most print statements through the
+ inference process
+
+---
+ .../pose_estimation_tensorflow/core/train.py  |  14 ---
+ .../predict_multianimal.py                    |  25 +----
+ .../predict_videos.py                         | 100 +-----------------
+ .../post_processing/analyze_skeleton.py       |   2 -
+ .../refine_training_dataset/outlier_frames.py |  47 +-------
+ deeplabcut/utils/auxiliaryfunctions.py        |  34 +-----
+ deeplabcut/utils/auxiliaryfunctions_3d.py     |   6 +-
+ deeplabcut/utils/make_labeled_video.py        |  37 +------
+ 8 files changed, 24 insertions(+), 243 deletions(-)
+
+diff --git a/deeplabcut/pose_estimation_tensorflow/core/train.py b/deeplabcut/pose_estimation_tensorflow/core/train.py
+index 3f824ca..913bbe9 100644
+--- a/deeplabcut/pose_estimation_tensorflow/core/train.py
++++ b/deeplabcut/pose_estimation_tensorflow/core/train.py
+@@ -95,7 +95,6 @@ def start_preloading(sess, enqueue_op, dataset, placeholders):
+ def get_optimizer(loss_op, cfg):
+     tstep = tf.compat.v1.placeholder(tf.int32, shape=[], name="tstep")
+     if "efficientnet" in cfg["net_type"]:
+-        print("Switching to cosine decay schedule with adam!")
+         cfg["optimizer"] = "adam"
+         learning_rate = tf.compat.v1.train.cosine_decay(
+             cfg["lr_init"], tstep, cfg["decay_steps"], alpha=cfg["alpha_r"]
+@@ -158,9 +157,6 @@ def train(
+     cfg = load_config(config_yaml)
+     net_type = cfg["net_type"]
+     if cfg["dataset_type"] in ("scalecrop", "tensorpack", "deterministic"):
+-        print(
+-            "Switching batchsize to 1, as tensorpack/scalecrop/deterministic loaders do not support batches >1. Use imgaug/default loader."
+-        )
+         cfg["batch_size"] = 1  # in case this was edited for analysis.-
+ 
+     dataset = PoseDatasetFactory.create(cfg)
+@@ -176,11 +172,9 @@ def train(
+ 
+     stem = Path(cfg["init_weights"]).stem
+     if "snapshot" in stem and keepdeconvweights:
+-        print("Loading already trained DLC with backbone:", net_type)
+         variables_to_restore = slim.get_variables_to_restore()
+         start_iter = int(stem.split("-")[1])
+     else:
+-        print("Loading ImageNet-pretrained", net_type)
+         # loading backbone from ResNet, MobileNet etc.
+         if "resnet" in net_type:
+             variables_to_restore = slim.get_variables_to_restore(include=["resnet_v1"])
+@@ -218,10 +212,8 @@ def train(
+ 
+     if cfg.get("freezeencoder", False):
+         if "efficientnet" in net_type:
+-            print("Freezing ONLY supported MobileNet/ResNet currently!!")
+             learning_rate, train_op, tstep = get_optimizer(total_loss, cfg)
+ 
+-        print("Freezing encoder...")
+         learning_rate, _, train_op = get_optimizer_with_freeze(total_loss, cfg)
+     else:
+         learning_rate, train_op, tstep = get_optimizer(total_loss, cfg)
+@@ -236,20 +228,17 @@ def train(
+     else:
+         max_iter = min(int(cfg["multi_step"][-1][1]), int(maxiters))
+         # display_iters = max(1,int(displayiters))
+-        print("Max_iters overwritten as", max_iter)
+ 
+     if displayiters is None:
+         display_iters = max(1, int(cfg["display_iters"]))
+     else:
+         display_iters = max(1, int(displayiters))
+-        print("Display_iters overwritten as", display_iters)
+ 
+     if saveiters is None:
+         save_iters = max(1, int(cfg["save_iters"]))
+ 
+     else:
+         save_iters = max(1, int(saveiters))
+-        print("Save_iters overwritten as", save_iters)
+ 
+     cum_loss = 0.0
+     lr_gen = LearningRate(cfg)
+@@ -257,9 +246,6 @@ def train(
+     stats_path = Path(config_yaml).with_name("learning_stats.csv")
+     lrf = open(str(stats_path), "w")
+ 
+-    print("Training parameter:")
+-    print(cfg)
+-    print("Starting training....")
+     max_iter += start_iter  # max_iter is relative to start_iter
+     for it in range(start_iter, max_iter + 1):
+         if "efficientnet" in net_type:
+diff --git a/deeplabcut/pose_estimation_tensorflow/predict_multianimal.py b/deeplabcut/pose_estimation_tensorflow/predict_multianimal.py
+index 4867c9c..9f1b61a 100644
+--- a/deeplabcut/pose_estimation_tensorflow/predict_multianimal.py
++++ b/deeplabcut/pose_estimation_tensorflow/predict_multianimal.py
+@@ -117,7 +117,6 @@ def AnalyzeMultiAnimalVideo(
+ ):
+     """Helper function for analyzing a video with multiple individuals"""
+ 
+-    print("Starting to analyze % ", video)
+     vname = Path(video).stem
+     videofolder = str(Path(video).parents[0])
+     if destfolder is None:
+@@ -126,9 +125,9 @@ def AnalyzeMultiAnimalVideo(
+     dataname = os.path.join(destfolder, vname + DLCscorer + ".h5")
+ 
+     if os.path.isfile(dataname.split(".h5")[0] + "_full.pickle"):
+-        print("Video already analyzed!", dataname)
++        # "Video already analyzed!", dataname
++        pass
+     else:
+-        print("Loading ", video)
+         vid = VideoWriter(video)
+         if robust_nframes:
+             nframes = vid.get_n_frames(robust=True)
+@@ -140,26 +139,9 @@ def AnalyzeMultiAnimalVideo(
+             fps = vid.fps
+ 
+         nx, ny = vid.dimensions
+-        print(
+-            "Duration of video [s]: ",
+-            round(duration, 2),
+-            ", recorded with ",
+-            round(fps, 2),
+-            "fps!",
+-        )
+-        print(
+-            "Overall # of frames: ",
+-            nframes,
+-            " found with (before cropping) frame dimensions: ",
+-            nx,
+-            ny,
+-        )
++
+         start = time.time()
+ 
+-        print(
+-            "Starting to extract posture from the video(s) with batchsize:",
+-            dlc_cfg["batch_size"],
+-        )
+         if use_shelve:
+             shelf_path = dataname.split(".h5")[0] + "_full.pickle"
+         else:
+@@ -204,7 +186,6 @@ def AnalyzeMultiAnimalVideo(
+             "cropping_parameters": coords,
+         }
+         metadata = {"data": dictionary}
+-        print("Video Analyzed. Saving results in %s..." % (destfolder))
+ 
+         if use_shelve:
+             metadata_path = dataname.split(".h5")[0] + "_meta.pickle"
+diff --git a/deeplabcut/pose_estimation_tensorflow/predict_videos.py b/deeplabcut/pose_estimation_tensorflow/predict_videos.py
+index 673dab1..470e1db 100644
+--- a/deeplabcut/pose_estimation_tensorflow/predict_videos.py
++++ b/deeplabcut/pose_estimation_tensorflow/predict_videos.py
+@@ -485,8 +485,6 @@ def analyze_videos(
+     if cropping is not None:
+         cfg["cropping"] = True
+         cfg["x1"], cfg["x2"], cfg["y1"], cfg["y2"] = cropping
+-        print("Overwriting cropping parameters:", cropping)
+-        print("These are used for all videos, but won't be save to the cfg file.")
+ 
+     modelfolder = os.path.join(
+         cfg["project_path"],
+@@ -521,9 +519,6 @@ def analyze_videos(
+         )
+ 
+     if cfg["snapshotindex"] == "all":
+-        print(
+-            "Snapshotindex is set to 'all' in the config.yaml file. Running video analysis with all snapshots is very costly! Use the function 'evaluate_network' to choose the best the snapshot. For now, changing snapshot index to -1!"
+-        )
+         snapshotindex = -1
+     else:
+         snapshotindex = cfg["snapshotindex"]
+@@ -531,8 +526,6 @@ def analyze_videos(
+     increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
+     Snapshots = Snapshots[increasing_indices]
+ 
+-    print("Using %s" % Snapshots[snapshotindex], "for model", modelfolder)
+-
+     ##################################################
+     # Load and setup CNN part detector
+     ##################################################
+@@ -558,13 +551,9 @@ def analyze_videos(
+ 
+     if dynamic[0]:  # state=true
+         # (state,detectiontreshold,margin)=dynamic
+-        print("Starting analysis in dynamic cropping mode with parameters:", dynamic)
+         dlc_cfg["num_outputs"] = 1
+         TFGPUinference = False
+         dlc_cfg["batch_size"] = 1
+-        print(
+-            "Switching batchsize to 1, num_outputs (per animal) to 1 and TFGPUinference to False (all these features are not supported in this mode)."
+-        )
+ 
+     # Name for scorer:
+     DLCscorer, DLCscorerlegacy = auxiliaryfunctions.get_scorer_name(
+@@ -576,11 +565,7 @@ def analyze_videos(
+     )
+     if dlc_cfg["num_outputs"] > 1:
+         if TFGPUinference:
+-            print(
+-                "Switching to numpy-based keypoint extraction code, as multiple point extraction is not supported by TF code currently."
+-            )
+             TFGPUinference = False
+-        print("Extracting ", dlc_cfg["num_outputs"], "instances per bodypart")
+         xyz_labs_orig = ["x", "y", "likelihood"]
+         suffix = [str(s + 1) for s in range(dlc_cfg["num_outputs"])]
+         suffix[0] = ""  # first one has empty suffix for backwards compatibility
+@@ -674,31 +659,12 @@ def analyze_videos(
+                 )
+ 
+         os.chdir(str(start_path))
+-        if "multi-animal" in dlc_cfg["dataset_type"]:
+-            print(
+-                "The videos are analyzed. Time to assemble animals and track 'em... \n Call 'create_video_with_all_detections' to check multi-animal detection quality before tracking."
+-            )
+-            print(
+-                "If the tracking is not satisfactory for some videos, consider expanding the training set. You can use the function 'extract_outlier_frames' to extract a few representative outlier frames."
+-            )
+-        else:
+-            print(
+-                "The videos are analyzed. Now your research can truly start! \n You can create labeled videos with 'create_labeled_video'"
+-            )
+-            print(
+-                "If the tracking is not satisfactory for some videos, consider expanding the training set. You can use the function 'extract_outlier_frames' to extract a few representative outlier frames."
+-            )
+         return DLCscorer  # note: this is either DLCscorer or DLCscorerlegacy depending on what was used!
+     else:
+-        print("No video(s) were found. Please check your paths and/or 'video_type'.")
+         return DLCscorer
+ 
+ 
+ def checkcropping(cfg, cap):
+-    print(
+-        "Cropping based on the x1 = %s x2 = %s y1 = %s y2 = %s. You can adjust the cropping coordinates in the config.yaml file."
+-        % (cfg["x1"], cfg["x2"], cfg["y1"], cfg["y2"])
+-    )
+     nx = cfg["x2"] - cfg["x1"]
+     ny = cfg["y2"] - cfg["y1"]
+     if nx > 0 and ny > 0:
+@@ -943,7 +909,6 @@ def GetPoseDynamic(
+ 
+         ret, frame = cap.read()
+         if ret:
+-            # print(counter,x1,x2,y1,y2,detected)
+             originalframe = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+             if cfg["cropping"]:
+                 frame = img_as_ubyte(
+@@ -968,7 +933,6 @@ def GetPoseDynamic(
+                 if (
+                     detected and (x1 + y1 + y2 - ny + x2 - nx) != 0
+                 ):  # was detected in last frame and dyn. cropping was performed >> but object lost in cropped variant >> re-run on full frame!
+-                    # print("looking again, lost!")
+                     if cfg["cropping"]:
+                         frame = img_as_ubyte(
+                             originalframe[cfg["y1"] : cfg["y2"], cfg["x1"] : cfg["x2"]]
+@@ -1010,7 +974,6 @@ def AnalyzeVideo(
+     use_openvino="CPU" if is_openvino_available else None,
+ ):
+     """Helper function for analyzing a video."""
+-    print("Starting to analyze % ", video)
+ 
+     if destfolder is None:
+         destfolder = str(Path(video).parents[0])
+@@ -1019,7 +982,6 @@ def AnalyzeVideo(
+     try:
+         _ = auxiliaryfunctions.load_analyzed_data(destfolder, vname, DLCscorer)
+     except FileNotFoundError:
+-        print("Loading ", video)
+         cap = cv2.VideoCapture(video)
+         if not cap.isOpened():
+             raise IOError(
+@@ -1031,24 +993,9 @@ def AnalyzeVideo(
+         duration = nframes * 1.0 / fps
+         size = (int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
+         ny, nx = size
+-        print(
+-            "Duration of video [s]: ",
+-            round(duration, 2),
+-            ", recorded with ",
+-            round(fps, 2),
+-            "fps!",
+-        )
+-        print(
+-            "Overall # of frames: ",
+-            nframes,
+-            " found with (before cropping) frame dimensions: ",
+-            nx,
+-            ny,
+-        )
+ 
+         dynamic_analysis_state, detectiontreshold, margin = dynamic
+         start = time.time()
+-        print("Starting to extract posture")
+         if dynamic_analysis_state:
+             PredictedData, nframes = GetPoseDynamic(
+                 cfg,
+@@ -1114,7 +1061,6 @@ def AnalyzeVideo(
+         }
+         metadata = {"data": dictionary}
+ 
+-        print(f"Saving results in {destfolder}...")
+         dataname = os.path.join(destfolder, vname + DLCscorer + ".h5")
+         auxiliaryfunctions.save_data(
+             PredictedData[:nframes, :],
+@@ -1134,17 +1080,9 @@ def GetPosesofFrames(
+     """Batchwise prediction of pose for frame list in directory"""
+     from deeplabcut.utils.auxfun_videos import imread
+ 
+-    print("Starting to extract posture")
+     im = imread(os.path.join(directory, framelist[0]), mode="skimage")
+ 
+     ny, nx, nc = np.shape(im)
+-    print(
+-        "Overall # of frames: ",
+-        nframes,
+-        " found with (before cropping) frame dimensions: ",
+-        nx,
+-        ny,
+-    )
+ 
+     PredictedData = np.zeros(
+         (nframes, dlc_cfg["num_outputs"] * 3 * len(dlc_cfg["all_joints_names"]))
+@@ -1152,10 +1090,6 @@ def GetPosesofFrames(
+     batch_ind = 0  # keeps track of which image within a batch should be written to
+     batch_num = 0  # keeps track of which batch you are at
+     if cfg["cropping"]:
+-        print(
+-            "Cropping based on the x1 = %s x2 = %s y1 = %s y2 = %s. You can adjust the cropping coordinates in the config.yaml file."
+-            % (cfg["x1"], cfg["x2"], cfg["y1"], cfg["y2"])
+-        )
+         nx, ny = cfg["x2"] - cfg["x1"], cfg["y2"] - cfg["y1"]
+         if nx > 0 and ny > 0:
+             pass
+@@ -1326,9 +1260,6 @@ def analyze_time_lapse_frames(
+         )
+ 
+     if cfg["snapshotindex"] == "all":
+-        print(
+-            "Snapshotindex is set to 'all' in the config.yaml file. Running video analysis with all snapshots is very costly! Use the function 'evaluate_network' to choose the best the snapshot. For now, changing snapshot index to -1!"
+-        )
+         snapshotindex = -1
+     else:
+         snapshotindex = cfg["snapshotindex"]
+@@ -1336,8 +1267,6 @@ def analyze_time_lapse_frames(
+     increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
+     Snapshots = Snapshots[increasing_indices]
+ 
+-    print("Using %s" % Snapshots[snapshotindex], "for model", modelfolder)
+-
+     ##################################################
+     # Load and setup CNN part detector
+     ##################################################
+@@ -1385,7 +1314,6 @@ def analyze_time_lapse_frames(
+         """
+         Analyzes all the frames in the directory.
+         """
+-        print("Analyzing all frames in the directory: ", directory)
+         os.chdir(directory)
+         framelist = np.sort([fn for fn in os.listdir(os.curdir) if (frametype in fn)])
+         vname = Path(directory).stem
+@@ -1430,7 +1358,6 @@ def analyze_time_lapse_frames(
+                 }
+                 metadata = {"data": dictionary}
+ 
+-                print("Saving results in %s..." % (directory))
+ 
+                 auxiliaryfunctions.save_data(
+                     PredictedData[:nframes, :],
+@@ -1440,14 +1367,8 @@ def analyze_time_lapse_frames(
+                     framelist,
+                     save_as_csv,
+                 )
+-                print("The folder was analyzed. Now your research can truly start!")
+-                print(
+-                    "If the tracking is not satisfactory for some frame, consider expanding the training set."
+-                )
+             else:
+-                print(
+-                    "No frames were found. Consider changing the path or the frametype."
+-                )
++                pass
+ 
+     os.chdir(str(start_path))
+ 
+@@ -1643,8 +1564,6 @@ def convert_detections2tracklets(
+     # if cropping is not None:
+     #    cfg['cropping']=True
+     #    cfg['x1'],cfg['x2'],cfg['y1'],cfg['y2']=cropping
+-    #    print("Overwriting cropping parameters:", cropping)
+-    #    print("These are used for all videos, but won't be save to the cfg file.")
+ 
+     modelfolder = os.path.join(
+         cfg["project_path"],
+@@ -1695,16 +1614,12 @@ def convert_detections2tracklets(
+         )
+ 
+     if cfg["snapshotindex"] == "all":
+-        print(
+-            "Snapshotindex is set to 'all' in the config.yaml file. Running video analysis with all snapshots is very costly! Use the function 'evaluate_network' to choose the best the snapshot. For now, changing snapshot index to -1!"
+-        )
+         snapshotindex = -1
+     else:
+         snapshotindex = cfg["snapshotindex"]
+ 
+     increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
+     Snapshots = Snapshots[increasing_indices]
+-    print("Using %s" % Snapshots[snapshotindex], "for model", modelfolder)
+     dlc_cfg["init_weights"] = os.path.join(
+         modelfolder, "train", Snapshots[snapshotindex]
+     )
+@@ -1726,7 +1641,6 @@ def convert_detections2tracklets(
+     Videos.sort()
+     if len(Videos) > 0:
+         for video in Videos:
+-            print("Processing... ", video)
+             videofolder = str(Path(video).parents[0])
+             if destfolder is None:
+                 destfolder = videofolder
+@@ -1746,10 +1660,10 @@ def convert_detections2tracklets(
+             if (
+                 os.path.isfile(trackname) and not overwrite
+             ):  # TODO: check if metadata are identical (same parameters!)
+-                print("Tracklets already computed", trackname)
+-                print("Set overwrite = True to overwrite.")
++                # "Tracklets already computed", trackname
++                # "Set overwrite = True to overwrite."
++                pass
+             else:
+-                print("Analyzing", dataname)
+                 DLCscorer = metadata["data"]["Scorer"]
+                 all_jointnames = data["metadata"]["all_joints_names"]
+ 
+@@ -1871,12 +1785,8 @@ def convert_detections2tracklets(
+                     pickle.dump(tracklets, f, pickle.HIGHEST_PROTOCOL)
+ 
+         os.chdir(str(start_path))
+-
+-        print(
+-            "The tracklets were created (i.e., under the hood deeplabcut.convert_detections2tracklets was run). Now you can 'refine_tracklets' in the GUI, or run 'deeplabcut.stitch_tracklets'."
+-        )
+     else:
+-        print("No video(s) found. Please check your path!")
++        pass
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/deeplabcut/post_processing/analyze_skeleton.py b/deeplabcut/post_processing/analyze_skeleton.py
+index 52659a7..08c3b53 100644
+--- a/deeplabcut/post_processing/analyze_skeleton.py
++++ b/deeplabcut/post_processing/analyze_skeleton.py
+@@ -248,7 +248,6 @@ def analyzeskeleton(
+     Videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
+     Videos.sort()
+     for video in Videos:
+-        print("Processing %s" % (video))
+         if destfolder is None:
+             destfolder = str(Path(video).parents[0])
+ 
+@@ -259,7 +258,6 @@ def analyzeskeleton(
+             )
+             output_name = filepath.replace(".h5", f"_skeleton.h5")
+             if os.path.isfile(output_name):
+-                print(f"Skeleton in video {vname} already processed. Skipping...")
+                 continue
+ 
+             bones = {}
+diff --git a/deeplabcut/refine_training_dataset/outlier_frames.py b/deeplabcut/refine_training_dataset/outlier_frames.py
+index 4377685..03ca0d9 100644
+--- a/deeplabcut/refine_training_dataset/outlier_frames.py
++++ b/deeplabcut/refine_training_dataset/outlier_frames.py
+@@ -369,8 +369,6 @@ def extract_outlier_frames(
+ 
+     Videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
+     Videos.sort()
+-    if len(Videos) == 0:
+-        print("No suitable videos found in", videos)
+ 
+     for video in Videos:
+         if destfolder is None:
+@@ -433,13 +431,6 @@ def extract_outlier_frames(
+             # Run always except when the outlieralgorithm == manual.
+             if not outlieralgorithm == "manual":
+                 Indices = np.sort(list(set(Indices)))  # remove repetitions.
+-                print(
+-                    "Method ",
+-                    outlieralgorithm,
+-                    " found ",
+-                    len(Indices),
+-                    " putative outlier frames.",
+-                )
+                 print(
+                     "Do you want to proceed with extracting ",
+                     cfg["numframes2pick"],
+@@ -555,7 +546,6 @@ def compute_deviations(
+     """Fits Seasonal AutoRegressive Integrated Moving Average with eXogenous regressors model to data and computes confidence interval
+     as well as mean fit."""
+ 
+-    print("Fitting state-space models with parameters:", ARdegree, MAdegree)
+     df_x, df_y, df_likelihood = Dataframe.values.reshape((Dataframe.shape[0], -1, 3)).T
+     preds = []
+     for row in range(len(df_x)):
+@@ -629,12 +619,12 @@ def ExtractFramesbasedonPreselection(
+     vname = str(Path(video).stem)
+     tmpfolder = os.path.join(cfg["project_path"], "labeled-data", vname)
+     if os.path.isdir(tmpfolder):
+-        print("Frames from video", vname, " already extracted (more will be added)!")
++        pass
++        # "Frames from video", vname, " already extracted (more will be added)!"
+     else:
+         auxiliaryfunctions.attempttomakefolder(tmpfolder, recursive=True)
+ 
+     nframes = len(data)
+-    print("Loading video...")
+     if opencv:
+         vid = VideoWriter(video)
+         fps = vid.fps
+@@ -651,8 +641,6 @@ def ExtractFramesbasedonPreselection(
+     else:
+         coords = None
+ 
+-    print("Duration of video [s]: ", duration, ", recorded @ ", fps, "fps!")
+-    print("Overall # of frames: ", nframes, "with (cropped) frame dimensions: ")
+     if extractionalgorithm == "uniform":
+         if opencv:
+             frames2pick = frameselectiontools.UniformFramescv2(
+@@ -689,13 +677,9 @@ def ExtractFramesbasedonPreselection(
+             )
+ 
+     else:
+-        print(
+-            "Please implement this method yourself! Currently the options are 'kmeans', 'jump', 'uniform'."
+-        )
+         frames2pick = []
+ 
+     # Extract frames + frames with plotted labels and store them in folder (with name derived from video name) nder labeled-data
+-    print("Let's select frames indices:", frames2pick)
+     colors = visualization.get_cmap(len(bodyparts), cfg["colormap"])
+     strwidth = int(np.ceil(np.log10(nframes)))  # width for strings
+     for index in frames2pick:  ##tqdm(range(0,nframes,10)):
+@@ -748,10 +732,6 @@ def ExtractFramesbasedonPreselection(
+             else:
+                 add.add_new_videos(config, [video], coords=None,  copy_videos=copy_videos)
+         except:  # can we make a catch here? - in fact we should drop indices from DataCombined if they are in CollectedData.. [ideal behavior; currently this is pretty unlikely]
+-            print(
+-                "AUTOMATIC ADDING OF VIDEO TO CONFIG FILE FAILED! You need to do this manually for including it in the config.yaml file!"
+-            )
+-            print("Videopath:", video, "Coordinates for cropping:", coords)
+             pass
+ 
+         if with_annotations:
+@@ -828,15 +808,8 @@ def ExtractFramesbasedonPreselection(
+                 df.to_hdf(machinefile, key="df_with_missing", mode="w")
+                 df.to_csv(os.path.join(tmpfolder, "machinelabels.csv"))
+ 
+-        print(
+-            "The outlier frames are extracted. They are stored in the subdirectory labeled-data\%s."
+-            % vname
+-        )
+-        print(
+-            "Once you extracted frames for all videos, use 'refine_labels' to manually correct the labels."
+-        )
+     else:
+-        print("No frames were extracted.")
++        pass
+ 
+ 
+ def PlottingSingleFrame(
+@@ -936,7 +909,6 @@ def PlottingSingleFramecv2(
+         cap.set_to_frame(index)
+         frame = cap.read_frame()
+         if frame is None:
+-            print("Frame could not be read.")
+             return
+         image = img_as_ubyte(frame)
+         if crop:
+@@ -1029,7 +1001,6 @@ def merge_datasets(config, forceiterate=None):
+         ):  # Folder that contains human data set...
+             pass
+         else:
+-            print("The following folder was not manually refined,...", folder)
+             flagged = True
+             pass  # this folder does not contain a MachineLabelsRefine file (not updated...)
+ 
+@@ -1042,17 +1013,9 @@ def merge_datasets(config, forceiterate=None):
+             cfg["iteration"] = forceiterate
+ 
+         auxiliaryfunctions.write_config(config, cfg)
+-
+-        print(
+-            "Merged data sets and updated refinement iteration to "
+-            + str(cfg["iteration"])
+-            + "."
+-        )
+-        print(
+-            "Now you can create a new training set for the expanded annotated images (use create_training_dataset)."
+-        )
+     else:
+-        print("Please label, or remove the un-corrected folders.")
++        # "Please label, or remove the un-corrected folders."
++        pass
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/deeplabcut/utils/auxiliaryfunctions.py b/deeplabcut/utils/auxiliaryfunctions.py
+index 722a7d6..36b8b1f 100644
+--- a/deeplabcut/utils/auxiliaryfunctions.py
++++ b/deeplabcut/utils/auxiliaryfunctions.py
+@@ -352,7 +352,6 @@ def get_list_of_videos(
+         if not videotype:
+             videotype = auxfun_videos.SUPPORTED_VIDEOS
+ 
+-        print("Analyzing all the videos in the directory...")
+         videofolder = videos[0]
+ 
+         # make list of full paths
+@@ -385,7 +384,6 @@ def save_data(PredicteData, metadata, dataname, pdindex, imagenames, save_as_csv
+     """ Save predicted data as h5 file and metadata as pickle file; created by predict_videos.py """
+     DataMachine = pd.DataFrame(PredicteData, columns=pdindex, index=imagenames)
+     if save_as_csv:
+-        print("Saving csv poses!")
+         DataMachine.to_csv(dataname.split(".h5")[0] + ".csv")
+     DataMachine.to_hdf(dataname, "df_with_missing", format="table", mode="w")
+     with open(dataname.split(".h5")[0] + "_meta.pickle", "wb") as f:
+@@ -436,7 +434,6 @@ def get_video_list(filename, videopath, videtype):
+             videos = [filename]
+         else:
+             videos = []
+-            print("Video not found!", filename)
+     return videos
+ 
+ 
+@@ -564,9 +561,6 @@ def get_scorer_name(
+     if trainingsiterations == "unknown":
+         snapshotindex = cfg["snapshotindex"]
+         if cfg["snapshotindex"] == "all":
+-            print(
+-                "Changing snapshotindext to the last one -- plotting, videomaking, etc. should not be performed for all indices. For more selectivity enter the ordinal number of the snapshot you want (ie. 4 for the fifth) in the config file."
+-            )
+             snapshotindex = -1
+         else:
+             snapshotindex = cfg["snapshotindex"]
+@@ -626,19 +620,10 @@ def check_if_post_processing(folder, vname, DLCscorer, DLCscorerlegacy, suffix="
+     outdataname = os.path.join(folder, vname + DLCscorer + suffix + ".h5")
+     sourcedataname = os.path.join(folder, vname + DLCscorer + ".h5")
+     if os.path.isfile(outdataname):  # was data already processed?
+-        if suffix == "filtered":
+-            print("Video already filtered...", outdataname)
+-        elif suffix == "_skeleton":
+-            print("Skeleton in video already processed...", outdataname)
+-
+         return False, outdataname, sourcedataname, DLCscorer
+     else:
+         odn = os.path.join(folder, vname + DLCscorerlegacy + suffix + ".h5")
+         if os.path.isfile(odn):  # was it processed by DLC <2.1 project?
+-            if suffix == "filtered":
+-                print("Video already filtered...(with DLC<2.1)!", odn)
+-            elif suffix == "_skeleton":
+-                print("Skeleton in video already processed... (with DLC<2.1)!", odn)
+             return False, odn, odn, DLCscorerlegacy
+         else:
+             sdn = os.path.join(folder, vname + DLCscorerlegacy + ".h5")
+@@ -650,7 +635,7 @@ def check_if_post_processing(folder, vname, DLCscorer, DLCscorerlegacy, suffix="
+             elif os.path.isfile(tracks):  # May be a MA project with tracklets
+                 return True, tracks.replace(".h5", f"{suffix}.h5"), tracks, DLCscorer
+             else:
+-                print("Video not analyzed -- Run analyze_videos first.")
++                # "Video not analyzed -- Run analyze_videos first."
+                 return False, outdataname, sourcedataname, DLCscorer
+ 
+ 
+@@ -663,16 +648,8 @@ def check_if_not_analyzed(destfolder, vname, DLCscorer, DLCscorerlegacy, flag="v
+     # Iterate over data files and stop as soon as one matching the scorer is found
+     for h5file in h5files:
+         if vname + DLCscorer in Path(h5file).stem:
+-            if flag == "video":
+-                print("Video already analyzed!", h5file)
+-            elif flag == "framestack":
+-                print("Frames already analyzed!", h5file)
+             return False, h5file, DLCscorer
+         elif vname + DLCscorerlegacy in Path(h5file).stem:
+-            if flag == "video":
+-                print("Video already analyzed!", h5file)
+-            elif flag == "framestack":
+-                print("Frames already analyzed!", h5file)
+             return False, h5file, DLCscorerlegacy
+ 
+     # If there was no match...
+@@ -683,12 +660,10 @@ def check_if_not_analyzed(destfolder, vname, DLCscorer, DLCscorerlegacy, flag="v
+ def check_if_not_evaluated(folder, DLCscorer, DLCscorerlegacy, snapshot):
+     dataname = os.path.join(folder, DLCscorer + "-" + str(snapshot) + ".h5")
+     if os.path.isfile(dataname):
+-        print("This net has already been evaluated!")
+         return False, dataname, DLCscorer
+     else:
+         dn = os.path.join(folder, DLCscorerlegacy + "-" + str(snapshot) + ".h5")
+         if os.path.isfile(dn):
+-            print("This net has already been evaluated (with DLC<2.1)!")
+             return False, dn, DLCscorerlegacy
+         else:
+             return True, dataname, DLCscorer
+@@ -758,10 +733,9 @@ def find_analyzed_data(folder, videoname, scorer, filtered=False, track_method="
+ 
+     n_candidates = len(candidates)
+     if n_candidates > 1:  # This should not be happening anyway...
+-        print(
+-            f"{n_candidates} possible data files were found: {candidates}.\n"
+-            f"Picking the first by default..."
+-        )
++        pass
++        # f"{n_candidates} possible data files were found: {candidates}.\n"
++        # f"Picking the first by default..."
+     filepath = os.path.join(folder, candidates[0])
+     scorer = scorer if scorer in filepath else scorer_legacy
+     return filepath, scorer, suffix
+diff --git a/deeplabcut/utils/auxiliaryfunctions_3d.py b/deeplabcut/utils/auxiliaryfunctions_3d.py
+index c0d3b3c..6ff644c 100644
+--- a/deeplabcut/utils/auxiliaryfunctions_3d.py
++++ b/deeplabcut/utils/auxiliaryfunctions_3d.py
+@@ -138,7 +138,6 @@ def get_camerawise_videos(path, cam_names, videotype):
+             for name in glob.glob(os.path.join(path, str("*" + cam + "*" + videotype)))
+         ]
+     )  # all videos with cam
+-    # print("here is what I found",vid)
+     for k in range(len(vid[0])):
+         if cam in str(Path(vid[0][k]).stem):
+             ending = Path(vid[0][k]).suffix
+@@ -146,7 +145,8 @@ def get_camerawise_videos(path, cam_names, videotype):
+             suf = str(Path(vid[0][k]).stem).split(cam)[1]
+             if pref == "":
+                 if suf == "":
+-                    print("Strange naming convention on your part. Respect.")
++                    pass
++                    # "Strange naming convention on your part. Respect."
+                 else:
+                     putativecam2name = os.path.join(path, cam_names[1] + suf + ending)
+             else:
+@@ -156,7 +156,6 @@ def get_camerawise_videos(path, cam_names, videotype):
+                     putativecam2name = os.path.join(
+                         path, pref + cam_names[1] + suf + ending
+                     )
+-            # print([os.path.join(path,pref+cam+suf+ending),putativecam2name])
+             if os.path.isfile(putativecam2name):
+                 # found a pair!!!
+                 video_list.append(
+@@ -182,7 +181,6 @@ def Get_list_of_triangulated_and_videoFiles(
+         """
+         Analyzes all the videos in the directory.
+         """
+-        print("Analyzing all the videos in the directory")
+         videofolder = filepath[0]
+         cwd = os.getcwd()
+         os.chdir(videofolder)
+diff --git a/deeplabcut/utils/make_labeled_video.py b/deeplabcut/utils/make_labeled_video.py
+index 8961886..2eb61ad 100644
+--- a/deeplabcut/utils/make_labeled_video.py
++++ b/deeplabcut/utils/make_labeled_video.py
+@@ -96,18 +96,6 @@ def CreateVideo(
+     nframes = clip.nframes
+     duration = nframes / fps
+ 
+-    print(
+-        "Duration of video [s]: {}, recorded with {} fps!".format(
+-            round(duration, 2), round(fps, 2)
+-        )
+-    )
+-    print(
+-        "Overall # of frames: {} with cropped frame dimensions: {} {}".format(
+-            nframes, nx, ny
+-        )
+-    )
+-    print("Generating frames and creating video.")
+-
+     df_x, df_y, df_likelihood = Dataframe.values.reshape((len(Dataframe), -1, 3)).T
+     if cropping and not displaycropped:
+         df_x += x1
+@@ -224,17 +212,6 @@ def CreateVideoSlow(
+     nframes = clip.nframes
+     duration = nframes / fps
+ 
+-    print(
+-        "Duration of video [s]: {}, recorded with {} fps!".format(
+-            round(duration, 2), round(fps, 2)
+-        )
+-    )
+-    print(
+-        "Overall # of frames: {} with cropped frame dimensions: {} {}".format(
+-            nframes, nx, ny
+-        )
+-    )
+-    print("Generating frames and creating video.")
+     df_x, df_y, df_likelihood = Dataframe.values.reshape((len(Dataframe), -1, 3)).T
+     if cropping and not displaycropped:
+         df_x += x1
+@@ -338,7 +315,6 @@ def CreateVideoSlow(
+                 writer.grab_frame()
+                 ax.clear()
+ 
+-    print("Labeled video {} successfully created.".format(videooutname))
+     plt.switch_backend(prev_backend)
+ 
+ 
+@@ -620,7 +596,6 @@ def proc_video(
+     auxiliaryfunctions.attempttomakefolder(destfolder)
+ 
+     os.chdir(destfolder)  # THE VIDEO IS STILL IN THE VIDEO FOLDER
+-    print("Starting to process video: {}".format(video))
+     vname = str(Path(video).stem)
+ 
+     if filtered:
+@@ -631,9 +606,8 @@ def proc_video(
+         videooutname2 = os.path.join(vname + DLCscorerlegacy + "_labeled.mp4")
+ 
+     if os.path.isfile(videooutname1) or os.path.isfile(videooutname2):
+-        print("Labeled video {} already created.".format(vname))
++        pass
+     else:
+-        print("Loading {} and data.".format(video))
+         try:
+             df, filepath, _, _ = auxiliaryfunctions.load_analyzed_data(
+                 destfolder, vname, DLCscorer, filtered, track_method
+@@ -647,7 +621,6 @@ def proc_video(
+                 s = ""
+             videooutname = filepath.replace(".h5", f"{s}_labeled.mp4")
+             if os.path.isfile(videooutname):
+-                print("Labeled video already created. Skipping...")
+                 return
+ 
+             if all(individuals):
+@@ -965,7 +938,6 @@ def create_video_with_all_detections(
+             )
+ 
+         if not (os.path.isfile(outputname)):
+-            print("Creating labeled video for ", str(Path(video).stem))
+             h5file = full_pickle.replace("_full.pickle", ".h5")
+             data, _ = auxfun_multianimal.LoadFullMultiAnimalData(h5file)
+             data = dict(data)  # Cast to dict (making a copy) so items can safely be popped
+@@ -1008,16 +980,17 @@ def create_video_with_all_detections(
+                         rr, cc = disk((y, x), dotsize, shape=(ny, nx))
+                         frame[rr, cc] = colors[bpts.index(det.label)]
+                 except ValueError:  # No data stored for that particular frame
+-                    print(n, "no data")
++                    # n, "no data"
+                     pass
+                 try:
+                     clip.save_frame(frame)
+                 except:
+-                    print(n, "frame writing error.")
++                    # n, "frame writing error."
+                     pass
+             clip.close()
+         else:
+-            print("Detections already plotted, ", outputname)
++            # Detections already plotted, ", outputname
++            pass
+ 
+ 
+ def _create_video_from_tracks(video, tracks, destfolder, output_name, pcutoff, scale=1):
+-- 
+2.34.1
+

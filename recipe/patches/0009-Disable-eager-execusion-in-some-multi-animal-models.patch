@@ -1,0 +1,31 @@
+From 9e2d4cc8539676795a726802406f18aa889c8aca Mon Sep 17 00:00:00 2001
+From: Mark Harfouche <mark.harfouche@gmail.com>
+Date: Mon, 22 Aug 2022 22:58:02 -0400
+Subject: [PATCH 09/11] Disable eager execusion in some multi-animal models
+
+---
+ .../pose_estimation_tensorflow/core/predict_multianimal.py      | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/deeplabcut/pose_estimation_tensorflow/core/predict_multianimal.py b/deeplabcut/pose_estimation_tensorflow/core/predict_multianimal.py
+index a0d0395..3df14ba 100644
+--- a/deeplabcut/pose_estimation_tensorflow/core/predict_multianimal.py
++++ b/deeplabcut/pose_estimation_tensorflow/core/predict_multianimal.py
+@@ -260,12 +260,14 @@ def find_local_maxima(scmap, radius, threshold):
+ 
+ 
+ def find_local_peak_indices_maxpool_nms(scmaps, radius, threshold):
++    tf.compat.v1.disable_eager_execution()
+     pooled = tf.nn.max_pool2d(scmaps, [radius, radius], strides=1, padding="SAME")
+     maxima = scmaps * tf.cast(tf.equal(scmaps, pooled), tf.float32)
+     return tf.cast(tf.where(maxima >= threshold), tf.int32)
+ 
+ 
+ def find_local_peak_indices_dilation(scmaps, radius, threshold):
++    tf.compat.v1.disable_eager_execution()
+     kernel = np.zeros((radius, radius, 1))
+     mid = (radius - 1) // 2
+     kernel[mid, mid] = -1
+-- 
+2.34.1
+

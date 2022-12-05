@@ -1,0 +1,115 @@
+From fad84bc572a02bbfc3f884c6874b1abbf9aeb3ee Mon Sep 17 00:00:00 2001
+From: Mark Harfouche <mark.harfouche@gmail.com>
+Date: Mon, 28 Mar 2022 18:32:46 -0400
+Subject: [PATCH 04/11] Ensure videos are sorted during inference steps to have
+ more predictable outputs.
+
+---
+ deeplabcut/pose_estimation_tensorflow/predict_videos.py | 1 +
+ deeplabcut/post_processing/analyze_skeleton.py          | 1 +
+ deeplabcut/post_processing/filtering.py                 | 2 +-
+ deeplabcut/refine_training_dataset/outlier_frames.py    | 1 +
+ deeplabcut/refine_training_dataset/stitch.py            | 3 ++-
+ deeplabcut/utils/make_labeled_video.py                  | 3 ++-
+ deeplabcut/utils/plotting.py                            | 1 +
+ 7 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/deeplabcut/pose_estimation_tensorflow/predict_videos.py b/deeplabcut/pose_estimation_tensorflow/predict_videos.py
+index c440dc3..673dab1 100644
+--- a/deeplabcut/pose_estimation_tensorflow/predict_videos.py
++++ b/deeplabcut/pose_estimation_tensorflow/predict_videos.py
+@@ -1723,6 +1723,7 @@ def convert_detections2tracklets(
+     # Looping over videos
+     ##################################################
+     Videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
++    Videos.sort()
+     if len(Videos) > 0:
+         for video in Videos:
+             print("Processing... ", video)
+diff --git a/deeplabcut/post_processing/analyze_skeleton.py b/deeplabcut/post_processing/analyze_skeleton.py
+index f483e6e..52659a7 100644
+--- a/deeplabcut/post_processing/analyze_skeleton.py
++++ b/deeplabcut/post_processing/analyze_skeleton.py
+@@ -246,6 +246,7 @@ def analyzeskeleton(
+     )
+ 
+     Videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
++    Videos.sort()
+     for video in Videos:
+         print("Processing %s" % (video))
+         if destfolder is None:
+diff --git a/deeplabcut/post_processing/filtering.py b/deeplabcut/post_processing/filtering.py
+index 4a043cd..3ff6908 100644
+--- a/deeplabcut/post_processing/filtering.py
++++ b/deeplabcut/post_processing/filtering.py
+@@ -199,7 +199,7 @@ def filterpredictions(
+         modelprefix=modelprefix,
+     )
+     Videos = auxiliaryfunctions.get_list_of_videos(video, videotype)
+-
++    Videos.sort()
+     if not len(Videos):
+         print("No video(s) were found. Please check your paths and/or 'videotype'.")
+         return
+diff --git a/deeplabcut/refine_training_dataset/outlier_frames.py b/deeplabcut/refine_training_dataset/outlier_frames.py
+index 841acc3..4377685 100644
+--- a/deeplabcut/refine_training_dataset/outlier_frames.py
++++ b/deeplabcut/refine_training_dataset/outlier_frames.py
+@@ -368,6 +368,7 @@ def extract_outlier_frames(
+     )
+ 
+     Videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
++    Videos.sort()
+     if len(Videos) == 0:
+         print("No suitable videos found in", videos)
+ 
+diff --git a/deeplabcut/refine_training_dataset/stitch.py b/deeplabcut/refine_training_dataset/stitch.py
+index 0694aeb..20121fc 100644
+--- a/deeplabcut/refine_training_dataset/stitch.py
++++ b/deeplabcut/refine_training_dataset/stitch.py
+@@ -1090,7 +1090,8 @@ def stitch_tracklets(
+     -------
+     A TrackletStitcher object
+     """
+-    vids = deeplabcut.utils.auxiliaryfunctions.get_list_of_videos(videos, videotype)
++    vids = auxiliaryfunctions.get_list_of_videos(videos, videotype)
++    vids.sort()
+     if not vids:
+         print("No video(s) found. Please check your path!")
+         return
+diff --git a/deeplabcut/utils/make_labeled_video.py b/deeplabcut/utils/make_labeled_video.py
+index d318de6..8961886 100644
+--- a/deeplabcut/utils/make_labeled_video.py
++++ b/deeplabcut/utils/make_labeled_video.py
+@@ -547,7 +547,7 @@ def create_labeled_video(
+ 
+     start_path = os.getcwd()
+     Videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
+-
++    Videos.sort()
+     if not Videos:
+         return
+ 
+@@ -945,6 +945,7 @@ def create_video_with_all_detections(
+     )
+ 
+     videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
++    videos.sort()
+     if not videos:
+         return
+ 
+diff --git a/deeplabcut/utils/plotting.py b/deeplabcut/utils/plotting.py
+index c3524ad..e12a505 100644
+--- a/deeplabcut/utils/plotting.py
++++ b/deeplabcut/utils/plotting.py
+@@ -268,6 +268,7 @@ def plot_trajectories(
+         cfg, displayedindividuals
+     )
+     Videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
++    Videos.sort()
+     if not len(Videos):
+         print(
+             "No videos found. Make sure you passed a list of videos and that *videotype* is right."
+-- 
+2.34.1
+

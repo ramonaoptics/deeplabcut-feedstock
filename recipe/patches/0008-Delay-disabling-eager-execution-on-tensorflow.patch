@@ -1,0 +1,150 @@
+From 7648b5f331734406ddc05da8218e3c8c7530b3cc Mon Sep 17 00:00:00 2001
+From: Mark Harfouche <mark.harfouche@gmail.com>
+Date: Mon, 15 Aug 2022 07:28:44 -0400
+Subject: [PATCH 08/11] Delay disabling eager execution on tensorflow
+
+---
+ deeplabcut/pose_estimation_tensorflow/core/evaluate.py         | 2 ++
+ .../pose_estimation_tensorflow/core/evaluate_multianimal.py    | 2 ++
+ deeplabcut/pose_estimation_tensorflow/core/predict.py          | 2 ++
+ deeplabcut/pose_estimation_tensorflow/core/train.py            | 2 +-
+ deeplabcut/pose_estimation_tensorflow/predict_videos.py        | 3 +++
+ deeplabcut/pose_estimation_tensorflow/training.py              | 1 +
+ deeplabcut/pose_estimation_tensorflow/visualizemaps.py         | 1 +
+ 7 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/deeplabcut/pose_estimation_tensorflow/core/evaluate.py b/deeplabcut/pose_estimation_tensorflow/core/evaluate.py
+index 9e66507..3e65f79 100644
+--- a/deeplabcut/pose_estimation_tensorflow/core/evaluate.py
++++ b/deeplabcut/pose_estimation_tensorflow/core/evaluate.py
+@@ -623,6 +623,7 @@ def evaluate_network(
+                 "TF_CUDNN_USE_AUTOTUNE"
+             ]  # was potentially set during training
+ 
++        tf.compat.v1.disable_eager_execution()
+         tf.compat.v1.reset_default_graph()
+         os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  #
+         #    tf.logging.set_verbosity(tf.logging.WARN)
+@@ -945,6 +946,7 @@ def evaluate_network(
+                                 foldername,
+                             )  # Rescaling coordinates to have figure in original size!
+ 
++                        tf.compat.v1.disable_eager_execution()
+                         tf.compat.v1.reset_default_graph()
+                         # print(final_result)
+                     else:
+diff --git a/deeplabcut/pose_estimation_tensorflow/core/evaluate_multianimal.py b/deeplabcut/pose_estimation_tensorflow/core/evaluate_multianimal.py
+index 82203c5..5dbf92a 100644
+--- a/deeplabcut/pose_estimation_tensorflow/core/evaluate_multianimal.py
++++ b/deeplabcut/pose_estimation_tensorflow/core/evaluate_multianimal.py
+@@ -123,6 +123,7 @@ def evaluate_multianimal_full(
+         del os.environ["TF_CUDNN_USE_AUTOTUNE"]  # was potentially set during training
+ 
+     tf.compat.v1.reset_default_graph()
++    tf.compat.v1.disable_eager_execution()
+     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  #
+     if gputouse is not None:  # gpu selectinon
+         os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+@@ -556,6 +557,7 @@ def evaluate_multianimal_full(
+                         )
+ 
+                         tf.compat.v1.reset_default_graph()
++                        tf.compat.v1.disable_eager_execution()
+ 
+                     n_multibpts = len(cfg["multianimalbodyparts"])
+                     if n_multibpts == 1:
+diff --git a/deeplabcut/pose_estimation_tensorflow/core/predict.py b/deeplabcut/pose_estimation_tensorflow/core/predict.py
+index c9f2fc6..4cb523f 100644
+--- a/deeplabcut/pose_estimation_tensorflow/core/predict.py
++++ b/deeplabcut/pose_estimation_tensorflow/core/predict.py
+@@ -30,6 +30,7 @@ from .openvino.session import OpenVINOSession
+ 
+ def setup_pose_prediction(cfg, allow_growth=False, collect_extra=False):
+     tf.compat.v1.reset_default_graph()
++    tf.compat.v1.disable_eager_execution()
+     inputs = tf.compat.v1.placeholder(
+         tf.float32, shape=[cfg["batch_size"], None, None, 3]
+     )
+@@ -216,6 +217,7 @@ def getposeNP(image, cfg, sess, inputs, outputs, outall=False):
+ ### Code for TF inference on GPU
+ def setup_GPUpose_prediction(cfg, allow_growth=False):
+     tf.compat.v1.reset_default_graph()
++    tf.compat.v1.disable_eager_execution()
+     inputs = tf.compat.v1.placeholder(
+         tf.float32, shape=[cfg["batch_size"], None, None, 3]
+     )
+diff --git a/deeplabcut/pose_estimation_tensorflow/core/train.py b/deeplabcut/pose_estimation_tensorflow/core/train.py
+index 913bbe9..fca4867 100644
+--- a/deeplabcut/pose_estimation_tensorflow/core/train.py
++++ b/deeplabcut/pose_estimation_tensorflow/core/train.py
+@@ -19,7 +19,6 @@ from pathlib import Path
+ 
+ import tensorflow as tf
+ 
+-tf.compat.v1.disable_eager_execution()
+ import tf_slim as slim
+ 
+ from deeplabcut.pose_estimation_tensorflow.config import load_config
+@@ -200,6 +199,7 @@ def train(
+         max_to_keep=max_to_keep
+     )  # selects how many snapshots are stored, see https://github.com/DeepLabCut/DeepLabCut/issues/8#issuecomment-387404835
+ 
++    tf.compat.v1.disable_eager_execution()
+     if allow_growth:
+         config = tf.compat.v1.ConfigProto()
+         config.gpu_options.allow_growth = True
+diff --git a/deeplabcut/pose_estimation_tensorflow/predict_videos.py b/deeplabcut/pose_estimation_tensorflow/predict_videos.py
+index d86ac4b..7f4b3b0 100644
+--- a/deeplabcut/pose_estimation_tensorflow/predict_videos.py
++++ b/deeplabcut/pose_estimation_tensorflow/predict_videos.py
+@@ -96,6 +96,7 @@ def create_tracking_dataset(
+     if gputouse is not None:  # gpu selection
+         os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+ 
++    tf.compat.v1.disable_eager_execution()
+     tf.compat.v1.reset_default_graph()
+     start_path = os.getcwd()  # record cwd to return to this directory in the end
+ 
+@@ -488,6 +489,7 @@ def analyze_videos(
+     if gputouse is not None:  # gpu selection
+         os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+ 
++    tf.compat.v1.disable_eager_execution()
+     tf.compat.v1.reset_default_graph()
+     start_path = os.getcwd()  # record cwd to return to this directory in the end
+ 
+@@ -1280,6 +1282,7 @@ def analyze_time_lapse_frames(
+     if gputouse is not None:  # gpu selection
+         os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+ 
++    tf.compat.v1.disable_eager_execution()
+     tf.compat.v1.reset_default_graph()
+     start_path = os.getcwd()  # record cwd to return to this directory in the end
+ 
+diff --git a/deeplabcut/pose_estimation_tensorflow/training.py b/deeplabcut/pose_estimation_tensorflow/training.py
+index be7b6d5..b37b0ad 100644
+--- a/deeplabcut/pose_estimation_tensorflow/training.py
++++ b/deeplabcut/pose_estimation_tensorflow/training.py
+@@ -157,6 +157,7 @@ def train_network(
+ 
+     from deeplabcut.utils import auxiliaryfunctions
+ 
++    tf.compat.v1.disable_eager_execution()
+     tf.compat.v1.reset_default_graph()
+     start_path = os.getcwd()
+ 
+diff --git a/deeplabcut/pose_estimation_tensorflow/visualizemaps.py b/deeplabcut/pose_estimation_tensorflow/visualizemaps.py
+index 582d9ba..608de4d 100644
+--- a/deeplabcut/pose_estimation_tensorflow/visualizemaps.py
++++ b/deeplabcut/pose_estimation_tensorflow/visualizemaps.py
+@@ -68,6 +68,7 @@ def extract_maps(
+     import numpy as np
+ 
+     tf.compat.v1.reset_default_graph()
++    tf.compat.v1.disable_eager_execution()
+     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  #
+     #    tf.logging.set_verbosity(tf.logging.WARN)
+ 
+-- 
+2.34.1
+
